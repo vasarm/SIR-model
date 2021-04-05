@@ -16,7 +16,7 @@ class Simulation:
     def __init__(self, K, T, width=100, height=100):
         if width * height > 500000000:
             raise RuntimeError(
-                "Error. Memory usage might be too big.")  # < 6 Gb
+                "Error. Memory usage might be too big.")  # < 6 GB total
         self.T = np.float32(T)
         self.K = np.float32(K)
         self.width = np.uint(width)
@@ -28,7 +28,7 @@ class Simulation:
                       pad_width=1, constant_values=0)
 
     def create_lattice(self, random=True, n_ill=10, custom=None):
-
+        # Create fully random lattice
         if random:
             lattice = np.pad(np.random.choice(np.array([1, 3], dtype=np.byte), p=[0.9, 0.1], size=self.shape),
                              pad_width=1, constant_values=0)
@@ -36,6 +36,7 @@ class Simulation:
                 coord_x = np.random.randint(1, self.width)
                 coord_y = np.random.randint(1, self.height)
                 lattice[coord_x, coord_y] = 2
+        # No immune persons.
         else:
             lattice = np.full(shape=self.shape, fill_value=1, dtype=np.byte)
             for x in range(n_ill):
@@ -65,6 +66,7 @@ class Simulation:
                                     hostbuf=self.random_states)
 
     def cycle(self, num_epoch):
+        # Temporary. To display result.
         print("Start")
         print(self.state1[1:-1, 1:-1])
         print(self.random_states[1:-1, 1:-1])
@@ -76,15 +78,18 @@ class Simulation:
                                       self.random_buf, self.state1_buf, self.state2_buf)
                 cl.enqueue_copy(self.queue, self.state2,
                                 self.state2_buf)
+                # Temporary. To display result.
                 print(self.state2[1:-1, 1:-1])
             else:
                 self.kernel.run_cycle(self.queue, np.flip(self.shape + 2), None, self.width, self.height, self.K, self.T,
                                       self.random_buf, self.state2_buf, self.state1_buf)
                 cl.enqueue_copy(self.queue, self.state1,
                                 self.state1_buf)
+                # Temporary. To display result.
                 print(self.state1[1:-1, 1:-1])
             cl.enqueue_copy(self.queue, self.random_states,
                             self.random_buf)
+            # Temporary. To display result.
             print(self.random_states[1:-1, 1:-1])
 
     def run(self, num_epoch=100, save_state=10, random=True, n_ill=10):
@@ -102,8 +107,5 @@ class Simulation:
             return self.state1
 
 
-array = np.array([[1, 1, 1, 1, 1], [1, 1, 1, 1, 1], [
-                 1, 1, 1, 1, 1], [1, 1, 2, 1, 1], [1, 1, 1, 1, 1]])
-
-sim = Simulation(1, 1, 3, 3)
+sim = Simulation(K=1, T=1, width=3, height=3)
 answer = sim.run(num_epoch=10)
