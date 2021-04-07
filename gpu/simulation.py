@@ -67,30 +67,22 @@ class Simulation:
 
     def cycle(self, num_epoch):
         # Temporary. To display result.
-        print("Start")
-        print(self.state1[1:-1, 1:-1])
-        print(self.random_states[1:-1, 1:-1])
-
         for i in range(num_epoch):
-            print("i =", i)
             if i % 2 == 0:
                 self.kernel.run_cycle(self.queue, np.flip(self.shape + 2), None, self.width, self.height, self.K, self.T,
                                       self.random_buf, self.state1_buf, self.state2_buf)
                 cl.enqueue_copy(self.queue, self.state2,
                                 self.state2_buf)
                 # Temporary. To display result.
-                print(self.state2[1:-1, 1:-1])
             else:
                 self.kernel.run_cycle(self.queue, np.flip(self.shape + 2), None, self.width, self.height, self.K, self.T,
                                       self.random_buf, self.state2_buf, self.state1_buf)
                 cl.enqueue_copy(self.queue, self.state1,
                                 self.state1_buf)
                 # Temporary. To display result.
-                print(self.state1[1:-1, 1:-1])
             cl.enqueue_copy(self.queue, self.random_states,
                             self.random_buf)
             # Temporary. To display result.
-            print(self.random_states[1:-1, 1:-1])
 
     def run(self, num_epoch=100, save_state=10, random=True, n_ill=10):
         # num_epoch - how many cycles simulation will run the cycle. (Not implemented: 0=Run till approx. no ill nodes are left. )
@@ -107,5 +99,6 @@ class Simulation:
             return self.state1
 
 
-sim = Simulation(K=1, T=1, width=3, height=3)
+sim = Simulation(K=0.5, T=0.2, width=10000, height=10000)
 answer = sim.run(num_epoch=10)
+print(answer)

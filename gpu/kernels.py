@@ -28,15 +28,16 @@ __kernel void run_cycle(const int width, const int height, const float K, const 
     // Take padding into account (width+2)
     int index = (width+2) * y + x;
     // If data[index] == 3 or data[index] == 0 then do nothing. 0 - wall, 3 - immune
-    
+    if (data[index] == 3){
+        result[index] = (char) 3;
+    } 
     // Get immune
-    if(data[index] == 2){
+    else if(data[index] == 2){
         float probability = return_probability(index, rand);
         // If generated probability (assumed uniform) is bigger than T, then do not get immune
         if (probability <= T){
             result[index] = (char) 3;
         }
-
     }
     else if (data[index] == 1){
         //count the number of ill nodes near the node
