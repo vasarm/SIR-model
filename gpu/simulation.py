@@ -8,54 +8,166 @@ import pyopencl as cl
 import numpy as np
 import time
 
-from kernels import kernel1
+from kernels import kernel1, counter_kernel
 
 
 class Simulation:
 
     def __init__(self, K, T, width=100, height=100):
+        """[summary]
+
+        Parameters
+        ----------
+        K : int, float, (any single digit)
+            Probability that one node infects.
+        T : inf, float, (any single digit)
+            Probability that nodes gets immune after being infected
+        width : int, optional
+            width of the lattice, by default 100
+        height : int, optional
+            height of the lattice, by default 100
+
+        Raises
+        ------
+        RuntimeError
+            Temporary error to avoid that program will take too much RAM (when creating numpy array).
+        """
         if width * height > 500000000:
             raise RuntimeError(
                 "Error. Memory usage might be too big.")  # < 6 GB total
+        # Initiate shape array
+        self.shape = np.array([0, 0], dtype=np.int)
+
         self.T = np.float32(T)
         self.K = np.float32(K)
         self.width = np.uint(width)
         self.height = np.uint(height)
-        self.shape = np.array([height, width], dtype=np.int)
 
-    def create_random_states(self):
-        return np.pad(np.random.randint(low=0, high=4294967295, size=self.shape, dtype=np.uint),
-                      pad_width=1, constant_values=0)
+    @property
+    def width(self):
+        return self._width
 
-    def create_lattice(self, random=True, n_ill=10, custom=None):
-        # Create fully random lattice
-        if random:
-            lattice = np.pad(np.random.choice(np.array([1, 3], dtype=np.byte), p=[0.9, 0.1], size=self.shape),
-                             pad_width=1, constant_values=0)
-            for x in range(n_ill):
-                coord_x = np.random.randint(1, self.width)
-                coord_y = np.random.randint(1, self.height)
-                lattice[coord_x, coord_y] = 2
-        # No immune persons.
+    @property
+    def height(self):
+        return self._height
+
+    @width.setter
+    def width(self, new_width):
+        if isinstance(new_width, (int, np.uint)) and new_width > 0:
+            self.shape[1] = np.int(new_width)
+            self._width = np.uint(new_width)
         else:
-            lattice = np.full(shape=self.shape, fill_value=1, dtype=np.byte)
-            for x in range(n_ill):
-                coord_x = np.random.randint(0, self.width)
-                coord_y = np.random.randint(0, self.height)
-                lattice[coord_x, coord_y] = 2
+            raise TypeError("Width must be positive integer.")
+
+    @height.setter
+    def height(self, new_height):
+        if isinstance(new_height, (int, np.uint)) and new_height > 0:
+            self.shape[0] = np.int(new_height)
+            self._height = np.uint(new_height)
+        else:
+            raise TypeError("Height must be positive integer.")
+
+    ############################
+    ####    Class mehtods   ####
+    ############################
+
+    def _lattice_padding(self, array, pad_width=1, constant_values=0):
+        return np.pad(array, pad_width=pad_width, constant_values=constant_values)
+
+    def _set_initial_random_numbers(self):
+        """
+        Create initial random number array for probability calculation.
+
+        Returns
+        -------
+        ndarray
+            Return ndarray with dtype = unsigned int. 
+        """
+        return np.random.randint(low=0, high=4294967295, size=self.shape, dtype=np.uint)
+
+    def create_lattice(self, random=True, p=[0.999, 0, 0.001], n_infected=10, user_lattice=None):
+        """
+        Create simulation lattice. User can define multiple modes:
+        1) random = True, p = [susceptible, infected, immune] : generate random lattice with given probabilities
+        2) random = True, p = [susceptible, 0, immune], n_infected = N : Insert exactly N infected nodes
+        3) user_lattice = np.ndarray : User defined lattice. For correct simulation use only defined node values.
+
+        Values on lattice: 0-padding, 1-susceptible, 2-infected, 3-immune
+
+        Parameters
+        ----------
+        random : bool, optional
+            If random lattice is generated, by default True
+        p : list, optional
+            Probabilities for initial state generation, by default [0.999, 0, 0.001]
+        n_infected : int, optional
+            [description], by default 10
+        user_lattice : [type], optional
+            [description], by default None
+
+        Returns
+        -------
+        np.ndarray
+            Padded simulation lattice (np.ndarray where dtype=np.byte).
+
+        Raises
+        ------
+        RuntimeError
+            [description]
+        ValueError
+            [description]
+        ValueError
+            [description]
+        """
+        if np.sum(p) != 1:
+            raise RuntimeError(
+                "Sum of probabilities to generating certain node must be 1.")
+        for p_i in p:
+            if p_i < 0:
+                raise ValueError(
+                    "Probability must have value between 0 <= p <= 1")
+
+        if random:
+            # Create fully random lattice
+
+            # User can define the number of infected
+            if n_infected is not None:
+                if p[1] != 0:
+                    raise ValueError(
+                        "If generating certain number of infected nodes then probability to generate infected must be zero.")
+
+            # Create random lattice
+            lattice = np.random.choice(
+                np.array([1, 2, 3], dtype=np.byte), p=p, size=self.shape)
+
+            # If user defined the number of infected nodes then insert them to lattice.
+            if n_infected is not None:
+                for x in range(n_infected):
+                    coord_x = np.random.randint(0, self.width-1)
+                    coord_y = np.random.randint(0, self.height-1)
+                    lattice[coord_y, coord_x] = 2
+
+        elif user_lattice is not None:
+            # If user has defined lattice then use it.
+            self.width = user_lattice.shape[1]
+            self.height = user_lattice.shape[0]
+            lattice = user_lattice.astype(np.byte)
+        else:
+            raise RuntimeError("Can't generate lattice - no method defined.")
+
+        # Lattice padding
+        lattice = self._lattice_padding(lattice, constant_values=np.byte(0))
         return lattice
 
-    def setup(self, random, n_ill):
+    def _init_kernel(self):
+        # Initiate kernel ready for calculation
         self.ctx = cl.create_some_context()
         self.kernel = cl.Program(self.ctx, kernel1()).build()
-        #self.kernel2 = cl.Program(self.ctx, kernel1()).build()
+        self.kernel_count = cl.Program(self.ctx, counter_kernel()).build()
         self.queue = cl.CommandQueue(self.ctx)
         self.mem_flags = cl.mem_flags
 
         # Create arrays for buffer
-        self.random_states = self.create_random_states()
-        self.state1 = self.create_lattice(random=True, n_ill=10)
-        self.state2 = np.copy(self.state1)
 
         # Buffers
         self.state1_buf = cl.Buffer(self.ctx, self.mem_flags.READ_WRITE | self.mem_flags.COPY_HOST_PTR,
@@ -65,33 +177,76 @@ class Simulation:
         self.random_buf = cl.Buffer(self.ctx, self.mem_flags.READ_WRITE | self.mem_flags.COPY_HOST_PTR,
                                     hostbuf=self.random_states)
 
-    def cycle(self, num_epoch):
-        # Temporary. To display result.
-        for i in range(num_epoch):
-            if i % 2 == 0:
-                self.kernel.run_cycle(self.queue, np.flip(self.shape + 2), None, self.width, self.height, self.K, self.T,
-                                      self.random_buf, self.state1_buf, self.state2_buf)
-                cl.enqueue_copy(self.queue, self.state2,
-                                self.state2_buf)
-                # Temporary. To display result.
-            else:
-                self.kernel.run_cycle(self.queue, np.flip(self.shape + 2), None, self.width, self.height, self.K, self.T,
-                                      self.random_buf, self.state2_buf, self.state1_buf)
-                cl.enqueue_copy(self.queue, self.state1,
-                                self.state1_buf)
-                # Temporary. To display result.
-            cl.enqueue_copy(self.queue, self.random_states,
-                            self.random_buf)
-            # Temporary. To display result.
+        self.counter = np.array([0, 0], dtype=np.uint)
+        self.counter_buf = cl.Buffer(self.ctx, self.mem_flags.READ_WRITE | self.mem_flags.COPY_HOST_PTR,
+                                     hostbuf=self.counter)
 
-    def run(self, num_epoch=100, save_state=10, random=True, n_ill=10):
+    def cycle(self, steps, save=10):
+        """Runs kernel num_step of times. As it uses only two buffers it changes between these after every step.
+            If epoch%2 == 0 then initial state = state1 and result = state2
+            If epoch%2 == 1 then initital state = state2 and result = state1
+        Parameters
+        ----------
+        steps : int
+            Number of steps.
+        """
+
+        for i in range(steps):
+            start = time.perf_counter()
+            # np.flip(self.shape + 2) as numpy shape uses width = shape[1] element and height = shape[0] element. Opencl has it's differently
+            if i % 2 == 0:
+                event = self.kernel.run_cycle(self.queue, np.flip(self.shape + 2), None, self.width, self.height, self.K, self.T,
+                                              self.random_buf, self.state1_buf, self.state2_buf)
+            else:
+                event = self.kernel.run_cycle(self.queue, np.flip(self.shape + 2), None, self.width, self.height, self.K, self.T,
+                                              self.random_buf, self.state2_buf, self.state1_buf)
+            event.wait()
+            end = time.perf_counter()
+            print("Step {}. Time taken {} s.".format(i, end-start))
+            if i == 0 or (i-1) % save == 0:
+                if i % 2 == 0:
+                    count_event = self.kernel_count.count_state(self.queue, np.flip(self.shape + 2), None,
+                                                                self.width, self.state2_buf, self.counter_buf)
+                else:
+                    count_event = self.kernel_count.count_state(self.queue, np.flip(self.shape + 2), None,
+                                                                self.width, self.state1_buf, self.counter_buf)
+                count_event.wait()
+                cl.enqueue_copy(self.queue, self.counter, self.counter_buf)
+                self.result.append(list(self.counter))
+
+    def run(self, steps=100, save=10, **kwargs):
+        """
+        Initiates OpenCL kernel and runs it num_epoch of times. Every save_state it saves the current array state.
+
+        Parameters
+        ----------
+        steps : int
+            Number of simulation steps, by default 100
+        save : int, optional
+            After every N steps save current state, by default 10
+
+        Returns
+        -------
+        [type]
+            [description]
+        """
         # num_epoch - how many cycles simulation will run the cycle. (Not implemented: 0=Run till approx. no ill nodes are left. )
         # save_state - after every "save_state" saves the current state values. (number of ill and number of immune)
         # At the moment save state returns array
-        self.setup(random, n_ill)
+        self.result = []
+        # *** Generate initial states for lattices and random numbers***
+        self.state1 = self.create_lattice(random=kwargs.get("random", True), p=kwargs.get("p", [0.999, 0, 0.001]),
+                                          n_infected=kwargs.get("n_infected", 10), user_lattice=kwargs.get("user_lattice", None))
+        self.state2 = np.copy(self.state1)
+        self.random_states = self._set_initial_random_numbers()
 
-        self.cycle(num_epoch)
-        if num_epoch % 2 == 0:
+        # Initiate Python wrapper for OpenCL
+        self._init_kernel()
+        # Release random states memory from RAM
+        del(self.random_states)
+        # Run kernel
+        self.cycle(steps)
+        if steps % 2 == 0:
             cl.enqueue_copy(self.queue, self.state2, self.state2_buf)
             return self.state2
         else:
@@ -99,6 +254,7 @@ class Simulation:
             return self.state1
 
 
-sim = Simulation(K=0.5, T=0.2, width=10000, height=10000)
+sim = Simulation(K=1, T=0.2, width=3, height=5)
 answer = sim.run(num_epoch=10)
 print(answer)
+print(sim.result)
