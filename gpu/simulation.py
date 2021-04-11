@@ -243,9 +243,9 @@ class Simulation:
             event.wait()
             end = time.perf_counter()
             #print("Step {}. Time taken {} s.".format(i, end-start))
-            if i % save == 0:
+            if i % (save-1) == 0:
                 self._count_on_cpu(i)
-                self._count_on_gpu(i)
+                # self._count_on_gpu(i)
 
     def run(self, steps=100, save=10, **kwargs):
         """
@@ -267,12 +267,6 @@ class Simulation:
         # save_state - after every "save_state" saves the current state values. (number of ill and number of immune)
         # At the moment save state returns array
         self.result = []
-
-        self.time_numpy = []
-        self.result_numpy = []
-        self.time_gpu = []
-        self.result_gpu = []
-
         # *** Generate initial states for lattices and random numbers***
         self.state1 = self.create_lattice(random=kwargs.get("random", True), p=kwargs.get("p", [0.999, 0, 0.001]),
                                           n_infected=kwargs.get("n_infected", 10), user_lattice=kwargs.get("user_lattice", None))
@@ -297,27 +291,5 @@ class Simulation:
             return self.state1
 
 
-width = 1
-height = 10
-result_gpu = []
-result_cpu = []
-
-for i in range(0, 7):
-    if i % 2 == 0:
-        width *= 10
-    else:
-        height *= 10
-    print(width, height)
-    sim = Simulation(K=1, T=1, width=width, height=height)
-    if width * height > 1000:
-        answer = sim.run(steps=10000, save=width*height/1000, random=True)
-    else:
-        answer = sim.run(steps=10000, save=1, random=True)
-    if not sim.result_gpu == sim.result_numpy:
-        print("Vastused ei klapi!")
-        break
-    result_gpu.append(sim.time_gpu)
-    result_cpu.append(sim.time_numpy)
-
-np.savetxt("gpu.txt", np.array(result_gpu))
-np.savetxt("cpu.txt", np.array(result_cpu))
+sim = Simulation(K=1, T=1, width=100, height=100)
+answer = sim.run(steps=10000, save=1, random=True)
