@@ -7,6 +7,9 @@
 import pyopencl as cl
 import pyopencl.array
 
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
 import numpy as np
 import time
 
@@ -83,7 +86,7 @@ class Simulation:
         Returns
         -------
         ndarray
-            Return ndarray with dtype = unsigned int. 
+            Return ndarray with dtype = unsigned int.
         """
         return np.random.randint(low=0, high=4294967295, size=self.shape, dtype=np.uint)
 
@@ -161,66 +164,65 @@ class Simulation:
         lattice = self._lattice_padding(lattice, constant_values=np.ubyte(0))
         return lattice
 
-    def _init_kernel(self):
+    def _init_kernel(self, count_method="gpu"):
         # Initiate kernel ready for calculation
         self.ctx = cl.create_some_context()
         self.kernel = cl.Program(self.ctx, kernel1()).build()
-        #self.kernel2 = cl.Program(self.ctx, kernel1()).build()
+        # self.kernel2 = cl.Program(self.ctx, kernel1()).build()
         self.kernel_count = cl.Program(self.ctx, counter_kernel()).build()
         self.queue = cl.CommandQueue(self.ctx)
         self.mem_flags = cl.mem_flags
 
         # Create arrays for buffer
-
         # Buffers
+        # Two lattice state buffers. After every epoch change initial and result buffer.
         self.state1_buf = cl.Buffer(self.ctx, self.mem_flags.READ_WRITE | self.mem_flags.COPY_HOST_PTR,
                                     hostbuf=self.state1)
         self.state2_buf = cl.Buffer(self.ctx, self.mem_flags.READ_WRITE | self.mem_flags.COPY_HOST_PTR,
                                     hostbuf=self.state2)
+        # Random number buffer
         self.random_buf = cl.Buffer(self.ctx, self.mem_flags.READ_WRITE | self.mem_flags.COPY_HOST_PTR,
                                     hostbuf=self.random_states)
 
-        self.counter = np.array([0, 0], dtype=np.uint32)
-        self.counter_buf = cl.Buffer(self.ctx, self.mem_flags.READ_WRITE | self.mem_flags.COPY_HOST_PTR,
-                                     hostbuf=self.counter)
+        # Create buffer for counter according to counter method.
+        if count_method == "gpu":
+            self.counter = np.array([0, 0], dtype=np.uint32)
+            self.counter_buf = cl.Buffer(self.ctx, self.mem_flags.READ_WRITE | self.mem_flags.COPY_HOST_PTR,
+                                         hostbuf=self.counter)
 
-    def _count_on_gpu(self, i):
-        # i is the step number
-        start = time.perf_counter()
-        self.counter = np.array([0, 0], dtype=np.uint32)
-        cl.enqueue_copy(self.queue, self.counter_buf, self.counter)
-        if i % 2 == 0:
-            self.kernel_count.count_state(self.queue, np.flip(self.shape), None,
-                                          self.width, self.state2_buf, self.counter_buf).wait()
-        else:
-            self.kernel_count.count_state(self.queue, np.flip(self.shape), None,
-                                          self.width, self.state1_buf, self.counter_buf).wait()
-        cl.enqueue_copy(self.queue, self.counter, self.counter_buf).wait()
-        end = time.perf_counter()
-        self.time_gpu.append(end-start)
-        self.result_gpu.append(list(self.counter))
+    def _count_state(self, i, method="gpu"):
+        """Method to count current lattice state.
 
-    def _count_on_cpu(self, i):
+        Parameters
+        ----------
+        method : str, optional
+            Choose which method to use, by default "gpu"
+        """
+        if method == "gpu":
+            # Let GPU count occurances of 2 and 3.
+            self.counter = np.array([0, 0], dtype=np.uint32)
+            cl.enqueue_copy(self.queue, self.counter_buf, self.counter)
+            if i % 2 == 1:
+                self.kernel_count.count_state(self.queue, np.flip(self.shape), None,
+                                              self.width, self.state2_buf, self.counter_buf).wait()
+            else:
+                self.kernel_count.count_state(self.queue, np.flip(self.shape), None,
+                                              self.width, self.state1_buf, self.counter_buf).wait()
+            cl.enqueue_copy(self.queue, self.counter, self.counter_buf).wait()
+            self.state_results.append(list(self.counter))
+        if method == "cpu1":
+            # Numpy method to fast count numbers. Only 2 and are needed.
+            if i % 2 == 1:
+                cl.enqueue_copy(self.queue, self.temp_state_array,
+                                self.state2_buf).wait()
+            else:
+                cl.enqueue_copy(self.queue, self.temp_state_array,
+                                self.state1_buf).wait()
+            counted = np.bincount(
+                self.temp_state_array.reshape(-1), minlength=4)[2:4]
+            self.state_results.append(list(counted))
 
-        # i is the step number
-        start = time.perf_counter()
-        if i % 2 == 0:
-            cl.enqueue_copy(self.queue, self.empty_array,
-                            self.state2_buf).wait()
-            counted = self.count_state(self.empty_array)
-        else:
-            cl.enqueue_copy(self.queue, self.empty_array,
-                            self.state1_buf).wait()
-            counted = self.count_state(self.empty_array)
-        end = time.perf_counter()
-        self.time_numpy.append(end-start)
-        self.result_numpy.append(list(counted[2:]))
-
-    def count_state(self, array):
-        result = np.bincount(array.reshape(-1))
-        return result
-
-    def cycle(self, steps, save=10):
+    def cycle(self, steps, save=10, count_method="gpu"):
         """Runs kernel num_step of times. As it uses only two buffers it changes between these after every step.
             If epoch%2 == 0 then initial state = state1 and result = state2
             If epoch%2 == 1 then initital state = state2 and result = state1
@@ -229,25 +231,57 @@ class Simulation:
         steps : int
             Number of steps.
         """
+        # Count 0-th step.
+        self._count_state(0, method=count_method)
 
-        for i in range(steps):
-            start = time.perf_counter()
-            # np.flip(self.shape + 2) as numpy shape uses width = shape[1] element and height = shape[0] element. Opencl has it's differently
-            if i % 2 == 0:
-                event = self.kernel.run_cycle(self.queue, np.flip(self.shape), None, self.width, self.height, self.K, self.T,
-                                              self.random_buf, self.state1_buf, self.state2_buf)
-            else:
-                event = self.kernel.run_cycle(self.queue, np.flip(self.shape), None, self.width, self.height, self.K, self.T,
-                                              self.random_buf, self.state2_buf, self.state1_buf)
+        # If steps=0 then simulation runst till no ill nodes are left.
+        if steps == 0:
+            if self.T == 0:
+                raise RuntimeError(
+                    "No nodes can ever get cured. Infinite cycle")
+            # First state index
 
-            event.wait()
-            end = time.perf_counter()
-            #print("Step {}. Time taken {} s.".format(i, end-start))
-            if i % (save-1) == 0:
-                self._count_on_cpu(i)
-                # self._count_on_gpu(i)
+            i = 1
+            while self.state_results[-1][0] != 0:
+                if i % 2 == 1:
+                    event = self.kernel.run_cycle(self.queue, np.flip(self.shape), None, self.width, self.height, self.K, self.T,
+                                                  self.random_buf, self.state1_buf, self.state2_buf)
+                else:
+                    event = self.kernel.run_cycle(self.queue, np.flip(self.shape), None, self.width, self.height, self.K, self.T,
+                                                  self.random_buf, self.state2_buf, self.state1_buf)
+                event.wait()
 
-    def run(self, steps=100, save=10, **kwargs):
+                # Save first state and then every "save"-th value.
+                # For example save=10: 10, 20, 30, etc...
+                if i % save == 0:
+                    self._count_state(i, method=count_method)
+                i += 1
+
+            self.number_of_steps = i-1
+
+        elif steps > 0 and isinstance(steps, int):
+            for i in range(1, steps+1):
+                # np.flip(self.shape + 2) as numpy shape uses width = shape[1] element and height = shape[0] element. Opencl has it's differently
+                if i % 2 == 1:
+                    event = self.kernel.run_cycle(self.queue, np.flip(self.shape), None, self.width, self.height, self.K, self.T,
+                                                  self.random_buf, self.state1_buf, self.state2_buf)
+                else:
+                    event = self.kernel.run_cycle(self.queue, np.flip(self.shape), None, self.width, self.height, self.K, self.T,
+                                                  self.random_buf, self.state2_buf, self.state1_buf)
+                event.wait()
+
+                # Save first state and then every "save"-th value.
+                # For example save=10: 10, 20, 30, etc...
+                if i % save == 0:
+                    self._count_state(i, method=count_method)
+        else:
+            raise RuntimeError("Not valid simulation parameters.")
+
+        # Count last state as well if needed.
+        if steps % save != 0:
+            self._count_state(i, method=count_method)
+
+    def run(self, steps=10, save=10, count_method="gpu", **kwargs):
         """
         Initiates OpenCL kernel and runs it num_epoch of times. Every save_state it saves the current array state.
 
@@ -266,30 +300,91 @@ class Simulation:
         # num_epoch - how many cycles simulation will run the cycle. (Not implemented: 0=Run till approx. no ill nodes are left. )
         # save_state - after every "save_state" saves the current state values. (number of ill and number of immune)
         # At the moment save state returns array
-        self.result = []
+
+        self.steps = steps
+        self.save = save
+
         # *** Generate initial states for lattices and random numbers***
         self.state1 = self.create_lattice(random=kwargs.get("random", True), p=kwargs.get("p", [0.999, 0, 0.001]),
                                           n_infected=kwargs.get("n_infected", 10), user_lattice=kwargs.get("user_lattice", None))
-        self.state2 = np.copy(self.state1)
-        self.empty_array = np.zeros_like(self.state1)
+        self.state2 = np.array(self.state1, copy=True)
 
+        # Array for results
+        self.state_results = []
+        # Array for counting results
+        if count_method == "cpu1":
+            self.temp_state_array = np.zeros_like(self.state1)
+
+        # Random number array for random number buffer.
         self.random_states = self._lattice_padding(
             self._set_initial_random_numbers())
         self.step_res = np.empty_like(self.state1, dtype=np.ubyte)
         # Initiate Python wrapper for OpenCL
-        self._init_kernel()
+        self._init_kernel(count_method=count_method)
 
-        # Release random states memory from RAM
+        # Release random states memory from RAM as it may take a lot of RAM.
         del(self.random_states)
-        # Run kernel
-        self.cycle(steps)
-        if steps % 2 == 0:
-            cl.enqueue_copy(self.queue, self.state2, self.state2_buf)
-            return self.state2
+
+        # Run kernel and lattice simulation
+        self.cycle(steps=self.steps, save=self.save, count_method=count_method)
+
+    def plot_result(self, ptype="abs"):
+        """Plot simulation results
+
+        Parameters
+        ----------
+        ptype : str, optional
+            Type for plotting y-values. 
+            "abs" - y axis shows number of nodes on lattice.
+            "percentage" - y axis shows percentage of nodes to the total value of nodes.
+            , by default "abs".
+
+        Raises
+        ------
+        RuntimeError
+            [description]
+        """
+        #fig, ax = plt.subplots(figsize=(15, 7))
+        sns.set_style("darkgrid")
+        sns.set_context("talk", font_scale=1)
+
+        if len(self.state_results) == 0:
+            raise RuntimeError("No results. Run simulation first")
+
+        if self.steps == 0:
+            x_axis_values = np.unique(np.concatenate(
+                [np.arange(0, self.number_of_steps, self.save), [self.number_of_steps]]))
         else:
-            cl.enqueue_copy(self.queue, self.state1, self.state1_buf)
-            return self.state1
+            x_axis_values = np.unique(np.concatenate(
+                [np.arange(0, self.steps, self.save), [self.steps]]))
+        y_sus = []
+        y_ill = []
+        y_immune = []
+        total_nodes = self.width * self.height
+
+        for step_res in self.state_results:
+            y_ill.append(step_res[0])
+            y_immune.append(step_res[1])
+            y_sus.append(total_nodes-step_res[0]-step_res[1])
+
+        if ptype == "percentage":
+            y_sus = np.array(y_sus)/total_nodes
+            y_ill = np.array(y_ill)/total_nodes
+            y_immune = np.array(y_immune)/total_nodes
+
+        data = pd.DataFrame(
+            {"Susceptible": y_sus, "Infected": y_ill, "Immune": y_immune})
+        sns.lineplot(x=x_axis_values, y=y_sus,
+                     label="Susceptible", color="blue", alpha=0.7)
+        sns.lineplot(x=x_axis_values, y=y_ill,
+                     label="Infected", color="red", alpha=0.7)
+        sns.lineplot(x=x_axis_values, y=y_immune,
+                     label="Immune", color="green", alpha=0.7)
+
+        plt.show()
 
 
-sim = Simulation(K=1, T=1, width=100, height=100)
-answer = sim.run(steps=10000, save=1, random=True)
+sim = Simulation(K=0.5, T=0.04, width=10000, height=10000)
+answer = sim.run(steps=100000, save=100, random=True, count_method="gpu")
+sim.plot_result(ptype="percentage")
+# print(sim.shape)
