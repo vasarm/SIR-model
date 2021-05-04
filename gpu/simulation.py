@@ -382,7 +382,7 @@ class Simulation:
         plt.show()
 
 
-sim = Simulation(K=0.5, T=0.01, width=1000, height=1000)
+sim = Simulation(K=0.5, T=0.02, width=1000, height=1000)
 sim.init()
 answer = sim.run()
 sim.display_result(y_axis_type="%")
