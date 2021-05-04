@@ -1,8 +1,9 @@
 
 
-def kernel1():
+def load_kernel1():
     kernel = """
 
+    // bitwise 
     int random(unsigned int seed){
         unsigned int t = seed ^ (seed << 11);
         unsigned int number = seed ^ (seed >> 19) ^ (t ^ (t >> 8));
@@ -79,7 +80,7 @@ def kernel1():
     return kernel
 
 
-def counter_kernel():
+def load_counter_kernel():
     kernel = """
     #pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
     void increase(volatile __global uint *counter, int pos){
