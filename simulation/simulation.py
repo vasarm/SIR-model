@@ -8,7 +8,10 @@ import pyopencl as cl
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from kernels import load_kernel1, load_counter_kernel
+if __name__ == "__main__":
+    from kernels import load_kernel1, load_counter_kernel
+else:
+    from .kernels import load_kernel1, load_counter_kernel
 
 
 class Simulation:
@@ -472,13 +475,13 @@ class Simulation:
         plt.show()
 
 
-lattice = np.full(shape=(1000, 1000), fill_value=1)
-lattice[0:500, 500] = 0
-lattice[123, 965] = 2
-#lattice[123, 966] = 3
+if __name__ == "__main__":
+    lattice = np.full(shape=(1000, 1000), fill_value=1)
+    lattice[0:500, 500] = 0
+    lattice[123, 965] = 2
+    #lattice[123, 966] = 3
 
-
-sim = Simulation(K=0.5, T=0.1, I=0.001, width=1000, height=1000)
-sim.init(random=False, lattice=lattice)
-answer = sim.run(number_of_steps=0, count_lattice_step=10, save=True)
-sim.display_result(y_axis_type="%")
+    sim = Simulation(K=0.5, T=0.1, I=0.001, width=1000, height=1000)
+    sim.init(random=False, lattice=lattice)
+    answer = sim.run(number_of_steps=0, count_lattice_step=10, save=True)
+    sim.display_result(y_axis_type="%")
