@@ -66,6 +66,8 @@ def update(frame):
     line3.set_data(steps[0: frame+1], immune[0: frame+1])
     ax2.relim()
     ax2.autoscale_view()
+    ax1.relim()
+    ax1.autoscale_view()
 
     return [grid, line1, line2, line3]
 

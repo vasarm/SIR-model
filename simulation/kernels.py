@@ -18,7 +18,7 @@ def load_kernel1():
         return probability;
     }
 
-    __kernel void run_cycle(const int width, const int height, const float K, const float T,
+    __kernel void run_cycle(const int width, const int height, const float K, const float T, const float I,
                         __global unsigned int *rand, __global unsigned char *data, __global unsigned char *result){
         // state is an array [number of ill, number of immune]
         // width and height are for non padded arrays, so add/substract 2 if using.
@@ -70,13 +70,42 @@ def load_kernel1():
             
             if (count != 0){
                 float prob_to_infect = (float) 1 - pow((float) 1-K, count);
-                float probability = return_probability(index, random_numbers_array);
-
+                float probability_infect = return_probability(index, random_numbers_array);
                 // If generated probabilty (let's assume uniform) is bigger than calculated probability, then do not get infected
-                if (probability <= prob_to_infect){
+                if (probability_infect <= prob_to_infect){
                     result[index] = (unsigned char) 2;
                 }
+                else {
+                    // If getting infected failed check if still gets randomly immune.
+                    if (I != 0) {
+                        float probability = return_probability(index, random_numbers_array);
+                        if (probability < I){
+                            result[index] = (unsigned char) 3;
+                        }
+                        else {
+                            result[index] = (unsigned char) 1;
+                        }
+                    }
+                }
             }
+            else {
+                // If node does not have possibility to get infected check if it randomly gets immune.
+                // Check only if I != 0 (I - immunization parameter)
+                if (I != 0) {
+                    float probability = return_probability(index, random_numbers_array);
+                    if (probability < I){
+                        result[index] = (unsigned char) 3;
+                    }
+                    else {
+                        result[index] = (unsigned char) 1;
+                    }
+                }
+                else {
+                    result[index] = (unsigned char) 1;
+                }
+
+            }
+
         }
     }
     """

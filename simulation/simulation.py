@@ -13,7 +13,7 @@ from kernels import load_kernel1, load_counter_kernel
 
 class Simulation:
 
-    def __init__(self, K, T, width=100, height=100):
+    def __init__(self, K, T, I=0, width=100, height=100):
         """
         Parameters
         ----------
@@ -37,8 +37,8 @@ class Simulation:
         self.shape = np.array([0, 0], dtype=np.int64)
 
         # Init probability parameters
-        self.T = np.float32(T)
-        self.K = np.float32(K)
+        self.T = T
+        self.K = K
         self.I = I
 
         # Init width and height
@@ -98,7 +98,9 @@ class Simulation:
     @T.setter
     def T(self, new_T):
         if isinstance(new_T, (int, float, np.float32)) and 0 < new_T <= 1:
-            self._T = new_T
+            self._T = lambda x: np.float32(new_T)
+        elif isinstance(new_T, types.FunctionType):
+            self._T = lambda x: np.float32(new_T(x))
         elif not isinstance(new_T, (int, float, np.float32)):
             raise TypeError("T must be integer or float.")
         elif new_T > 1 or new_T <= 0:
@@ -107,7 +109,9 @@ class Simulation:
     @K.setter
     def K(self, new_K):
         if isinstance(new_K, (int, float, np.float32)) and 0 < new_K <= 1:
-            self._K = new_K
+            self._K = lambda x: np.float32(new_K)
+        elif isinstance(new_K, types.FunctionType):
+            self._K = lambda x: np.float32(new_K(x))
         elif not isinstance(new_K, (int, float, np.float32)):
             raise TypeError("T must be integer or float.")
         elif new_K > 1 or new_K <= 0:
@@ -115,14 +119,14 @@ class Simulation:
 
     @I.setter
     def I(self, new_I):
-        if isinstance(new_I, (int, float, np.float32)) and 0 < new_I <= 1:
-            self._I = lambda x: new_I
+        if isinstance(new_I, (int, float, np.float32)) and 0 <= new_I <= 1:
+            self._I = lambda x: np.float32(new_I)
         elif isinstance(new_I, types.FunctionType):
-            self._I = lambda x: new_I(x)
+            self._I = lambda x: np.float32(new_I(x))
         elif not isinstance(new_I, (int, float, np.float32, types.FunctionType)):
             raise TypeError("I must be integer or float or function.")
         elif isinstance(new_I, (int, float, np.float32)) and (new_I > 1 or new_I <= 0):
-            raise ValueError("I must be 0 < I <= 1")
+            raise ValueError("I must be 0 <= I <= 1")
 
     @width.setter
     def width(self, new_width):
@@ -371,12 +375,14 @@ class Simulation:
 
         """
         if step_id % 2 == 1:
-            event = self.kernel.run_cycle(self.queue, np.flip(self.shape), None, self.width, self.height, self.K,
-                                          self.T,
+            event = self.kernel.run_cycle(self.queue, np.flip(self.shape), None, self.width, self.height,
+                                          self.K(step_id), self.T(
+                                              step_id), self.I(step_id),
                                           self.random_buf, self.state1_buf, self.state2_buf)
         else:
             event = self.kernel.run_cycle(self.queue, np.flip(self.shape), None, self.width, self.height,
-                                          self.K, self.T,
+                                          self.K(step_id), self.T(
+                                              step_id), self.I(step_id),
                                           self.random_buf, self.state2_buf, self.state1_buf)
         event.wait()
 
@@ -451,6 +457,7 @@ class Simulation:
                          label="Infected", color="red", alpha=0.7)
             sns.lineplot(x=self.step_list, y=self.immune_list,
                          label="Immune", color="green", alpha=0.7)
+            plt.ylabel("Number of infected nodes.")
         elif y_axis_type == "%":
             sns.lineplot(x=self.step_list, y=np.array(self.susceptible_list) / (self.width * self.height),
                          label="Susceptible", color="blue", alpha=0.7)
@@ -458,7 +465,10 @@ class Simulation:
                          label="Infected", color="red", alpha=0.7)
             sns.lineplot(x=self.step_list, y=np.array(self.immune_list) / (self.width * self.height),
                          label="Immune", color="green", alpha=0.7)
-        plt.title("K = {:.3f}, T = {:.3f}".format(self.K, self.T))
+            plt.ylabel("% of infected nodes.")
+        plt.title("Infection dynamics graph".format(self.K, self.T))
+        plt.xlabel("Step number")
+
         plt.show()
 
 
@@ -468,7 +478,7 @@ lattice[123, 965] = 2
 #lattice[123, 966] = 3
 
 
-sim = Simulation(K=0.5, T=0.1, width=1000, height=1000)
+sim = Simulation(K=0.5, T=0.1, I=0.001, width=1000, height=1000)
 sim.init(random=False, lattice=lattice)
-answer = sim.run(number_of_steps=0, save=True)
+answer = sim.run(number_of_steps=0, count_lattice_step=10, save=True)
 sim.display_result(y_axis_type="%")
