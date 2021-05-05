@@ -1,4 +1,5 @@
 import time
+import os
 
 import numpy as np
 import pyopencl as cl
@@ -24,6 +25,10 @@ class Simulation:
         height: int, optional
             height of the array without padding (height of the lattice)
         """
+        # width*height must be <= 50_000_000
+        # Hard coded limit as one file is ~50 MB. Change if you want.
+        self.max_array_size_to_save = 50_000_000
+
         # Init lattice shape
         self.shape = np.array([0, 0], dtype=np.int64)
 
@@ -64,7 +69,6 @@ class Simulation:
         self.infected_list = None
         self.immune_list = None
         self.step_list = None
-        #
 
     @property
     def T(self):
@@ -246,16 +250,26 @@ class Simulation:
         else:
             raise ValueError("Buffer id must be 1 or 2.")
 
-    def _count_state(self, i):
+    def _count_and_save_state(self, i, save=False, folder=None):
         if self.count_method == "gpu":
             self.counter_array = np.array([0, 0], dtype=np.uint32)
             cl.enqueue_copy(self.queue, self.counter_buf, self.counter_array)
             if i % 2 == 1:
                 self.counter_kernel.count_state(self.queue, np.flip(self.shape), None,
                                                 self.width, self.state2_buf, self.counter_buf).wait()
+                if save:
+                    cl.enqueue_copy(self.queue, self.state2,
+                                    self.state2_buf).wait()
+                    self._save_state(self.state2, folder, i)
+
             else:
                 self.counter_kernel.count_state(self.queue, np.flip(self.shape), None,
                                                 self.width, self.state1_buf, self.counter_buf).wait()
+                if save:
+                    cl.enqueue_copy(self.queue, self.state1,
+                                    self.state1_buf).wait()
+                    self._save_state(self.state1, folder, i)
+
             cl.enqueue_copy(self.queue, self.counter_array,
                             self.counter_buf).wait()
 
@@ -266,11 +280,39 @@ class Simulation:
                 cl.enqueue_copy(self.queue, self.state2,
                                 self.state2_buf).wait()
                 self.counter_array = self._cpu1_count(2)
+                if save:
+                    self._save_state(self.state2, folder, i)
+
             else:
                 cl.enqueue_copy(self.queue, self.state1,
                                 self.state1_buf).wait()
                 self.counter_array = self._cpu1_count(1)
+                if save:
+                    self._save_state(self.state2, folder, i)
+
             self._save_counted_result(i)
+
+    def _create_result_folder(self):
+        path = os.path.dirname(__file__)
+        # name[6:] because len(result) = 6
+        result_directories = [name[6:] for name in os.listdir(
+            path) if os.path.isdir("{}/{}".format(path, name)) and "result" in name]
+        # All directories which have number in results
+        numbers = [int(number)
+                   for number in result_directories if number.isdigit()]
+        if len(numbers) == 0:
+            name = "result1"
+        else:
+            free_numbers = set(
+                np.arange(1, np.max(numbers) + 2)) - set(numbers)
+            new_index = int(min(free_numbers))
+            name = "result{}".format(new_index)
+        os.mkdir("{}/{}".format(path, name))
+
+        return "{}/{}".format(path, name)
+
+    def _save_state(self, state, folder, i):
+        np.save("{}/{}".format(folder, i), state)
 
     def init(self, random=None, p=None, cnt_infected=None, lattice=None, count_method=None):
 
@@ -297,7 +339,7 @@ class Simulation:
         # Delete random number array to delete memory from computer memory
         del self.random_numbers
 
-    def _run_one_step(self, step_id, count_step, save):
+    def _run_one_step(self, step_id, count_step, save, folder=None):
         """
         Runs one step and saves if condition is met.
 
@@ -319,12 +361,20 @@ class Simulation:
         event.wait()
 
         if step_id % count_step == 0:
-            self._count_state(step_id)
+            self._count_and_save_state(step_id, save, folder=folder)
 
     def run(self, number_of_steps=1000, count_lattice_step=10, save=False):
+        if save:
+            if self.width * self.height > self.max_array_size_to_save:
+                raise RuntimeError(
+                    "Lattice width*height is bigger than set max array size. Saved files get too big. Change cap limit if you want to run program with these parameters.")
+            folder = self._create_result_folder()
+        else:
+            folder = None
+
         # Count initialized state
         start_time = time.perf_counter()
-        self._count_state(0)
+        self._count_and_save_state(0, save, folder)
         if number_of_steps < 0:
             raise ValueError("Number of steps must be >= 0.")
         if not isinstance(number_of_steps, int):
@@ -339,18 +389,28 @@ class Simulation:
         if number_of_steps == 0:  # Run till no nodes are ill
             i = 1
             while self.infected_list[-1] != 0:
-                self._run_one_step(i, count_lattice_step, save=save)
+                self._run_one_step(i, count_lattice_step,
+                                   save=save, folder=folder)
                 i += 1
 
         else:
             for i in range(1, number_of_steps+1):
-                self._run_one_step(i, count_lattice_step, save=save)
+                self._run_one_step(i, count_lattice_step,
+                                   save=save, folder=folder)
 
         # Count last state as well if needed.
         if number_of_steps % count_lattice_step != 0:
             self._count_state(i)
         end_time = time.perf_counter()
         print("Simulation run {} seconds.".format(end_time-start_time))
+
+        if save:
+            # Save step counts as well
+            np.save("{}/infected".format(folder), np.array(self.infected_list))
+            np.save("{}/susceptible".format(folder),
+                    np.array(self.susceptible_list))
+            np.save("{}/immune".format(folder), np.array(self.immune_list))
+            np.save("{}/steps".format(folder), np.array(self.step_list))
 
     def display_result(self, y_axis_type="abs"):
         ytypes = ["abs", "%"]
@@ -382,7 +442,13 @@ class Simulation:
         plt.show()
 
 
-sim = Simulation(K=0.5, T=0.02, width=1000, height=1000)
-sim.init()
-answer = sim.run()
-sim.display_result(y_axis_type="%")
+lattice = np.full(shape=(1000, 1000), fill_value=1)
+lattice[0:500, 500] = 0
+lattice[123, 965] = 2
+#lattice[123, 966] = 3
+
+
+sim = Simulation(K=0.5, T=0.4, width=1000, height=1000)
+sim.init(random=False, lattice=lattice)
+answer = sim.run(number_of_steps=0, save=False)
+# sim.display_result(y_axis_type="%")

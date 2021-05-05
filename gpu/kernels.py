@@ -31,7 +31,7 @@ def load_kernel1():
 
         // Take padding into account (width+2).
         // y = [0, width], so add 1 to iterate over [1, width+1]
-        // y = [0, height], so add 1 to iterate over [1, height+1]
+        // x = [0, height], so add 1 to iterate over [1, height+1]
         int index = (width+2) * (y+1) + x+1;
 
 
@@ -46,6 +46,9 @@ def load_kernel1():
             // If generated probability (assumed uniform) is bigger than T, then do not get immune
             if (probability <= T){
                 result[index] = (unsigned char) 3;
+            }
+            else {
+                result[index] = (unsigned char) 2;
             }
         }
         else if (data[index] == 1){
