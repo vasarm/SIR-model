@@ -483,5 +483,5 @@ if __name__ == "__main__":
 
     sim = Simulation(K=0.5, T=0.1, I=0.001, width=1000, height=1000)
     sim.init(random=False, lattice=lattice)
-    answer = sim.run(number_of_steps=0, count_lattice_step=10, save=True)
+    sim.run(number_of_steps=0, count_lattice_step=10, save=True)
     sim.display_result(y_axis_type="%")
