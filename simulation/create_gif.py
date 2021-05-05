@@ -77,5 +77,5 @@ animation = FuncAnimation(
 plt.show()
 
 # Change parameters for your own preference
-animation.save("{}.gif".format(result_file_name), fps=6,
+animation.save("{}/{}.gif".format(file_path, result_file_name), fps=6,
                bitrate=-1, codec="libx264", dpi=100)
