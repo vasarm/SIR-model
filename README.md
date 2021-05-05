@@ -39,14 +39,19 @@ If using random lattice genration then define lattice parameters as well. If ins
 ```
 
 Next initialize simulation which creates kernel and lattice.
+
     1) random : True/False
         Select if lattice generation is random or user provided. If user provided then set False. (Default: True)
+
     2) p : list [p_sus, p_inf, p_imm], (default [0.999, 0, 0.001])
         If lattice generation is random then insert probabilities to generate susceptible, infected, immune (accordingly to list) node on the lattice. Values must be < 1 and sum of all parameters must be. If p_inf (probability to generate infected node) = 0 then program takes next parameter which generates N infected nodes randomly on the lattice.
+
     3) cnt_infected : int, (default = 10)
         If p_inf == 0 then generate number of "cnt_infected" infected nodes on the lattice.
+
     4) lattice : np.array()
         If random == False then user must insert simulation lattice. Must be 2D array.
+        
     5) count_method : string, (defualt = "gpu):
         What method to use for counting nodes on lattice. "gpu" uses gpu implematation. "cpu1" reads memory from GPU memory and reads states on CPU. (With bigger lattices GPU method is faster) 
 
@@ -55,10 +60,13 @@ Next initialize simulation which creates kernel and lattice.
 ```
 
 Finally run the simulation. Takes in three parameters:
+
     1) number_of_steps : int, (default 1000)
         How many simulation steps will be performed on the lattice. If number_of_steps == 0 then run simulation till no infected nodes are left.
+
     2) count_lattice_step : int, (default 10)
         After these steps count node states on the array and adds to result list.
+        
     3) save : True/False, (default False)
         When program counts node states read current lattice from GPU and save as an array in the program folder. This method creates in the file path new folder where results are saved. Required if to convert simulation to gif.
 
