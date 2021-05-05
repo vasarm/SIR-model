@@ -18,8 +18,7 @@
 
 ## Usage
 
-### 1. Simulation object
-Create Simulation object
+### 1. Create Simulation object
 
 ```Python
     sim = Simulation(T, K, I=0, width=100, height=100)
