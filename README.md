@@ -21,10 +21,10 @@
 Create Simulation object and define parameters:
     
 1) T - probability that node transforms from 2 -> 3 (Gets immune after beeing infected). Must be between 0 < T <=1
-2) 
-3) K - probaability that node transforms from 1 -> 3 (Gets infected). Must be between 0 < K <=1
+ 
+2) K - probaability that node transforms from 1 -> 3 (Gets infected). Must be between 0 < K <=1
 
-*3) I - probability that node transfroms from 1 -> 3 (Gets randomly immune). Default value = 0. Must be between 0 <= I <= 1
+3)* I - probability that node transfroms from 1 -> 3 (Gets randomly immune). Default value = 0. Must be between 0 <= I <= 1
 
 These parameters can also be functions of step value but then check if returned value is always between required interval. (Program does not explicitly control it.)
 
