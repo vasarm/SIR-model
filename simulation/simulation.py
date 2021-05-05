@@ -1,5 +1,6 @@
 import time
 import os
+import types
 
 import numpy as np
 import pyopencl as cl
@@ -16,10 +17,13 @@ class Simulation:
         """
         Parameters
         ----------
-        K : int, float
-            Probability that node infects
-        T: int, float
-            Probability that node gets immune after being infected
+        K : int, float, float32
+            Probability that node infects.
+        T: int, float, float32
+            Probability that node gets immune after being infected.
+        I: float32, function
+            Must be float32 or function (dependent on step value) which returns float32 type value between 0< I <= 1.
+            Probability to get immune without being infected.
         width: int, optional
             width of the array without padding (width of the lattice)
         height: int, optional
@@ -35,6 +39,7 @@ class Simulation:
         # Init probability parameters
         self.T = np.float32(T)
         self.K = np.float32(K)
+        self.I = I
 
         # Init width and height
         # Changing width or height automatically changes self.shape as well
@@ -79,6 +84,10 @@ class Simulation:
         return self._K
 
     @property
+    def I(self):
+        return self._I
+
+    @property
     def width(self):
         return self._width
 
@@ -90,7 +99,7 @@ class Simulation:
     def T(self, new_T):
         if isinstance(new_T, (int, float, np.float32)) and 0 < new_T <= 1:
             self._T = new_T
-        elif not isinstance(new_T, (int, float)):
+        elif not isinstance(new_T, (int, float, np.float32)):
             raise TypeError("T must be integer or float.")
         elif new_T > 1 or new_T <= 0:
             raise ValueError("T must be 0 < T <= 1")
@@ -99,10 +108,21 @@ class Simulation:
     def K(self, new_K):
         if isinstance(new_K, (int, float, np.float32)) and 0 < new_K <= 1:
             self._K = new_K
-        elif not isinstance(new_K, (int, float)):
+        elif not isinstance(new_K, (int, float, np.float32)):
             raise TypeError("T must be integer or float.")
         elif new_K > 1 or new_K <= 0:
             raise ValueError("T must be 0 < T <= 1")
+
+    @I.setter
+    def I(self, new_I):
+        if isinstance(new_I, (int, float, np.float32)) and 0 < new_I <= 1:
+            self._I = lambda x: new_I
+        elif isinstance(new_I, types.FunctionType):
+            self._I = lambda x: new_I(x)
+        elif not isinstance(new_I, (int, float, np.float32, types.FunctionType)):
+            raise TypeError("I must be integer or float or function.")
+        elif isinstance(new_I, (int, float, np.float32)) and (new_I > 1 or new_I <= 0):
+            raise ValueError("I must be 0 < I <= 1")
 
     @width.setter
     def width(self, new_width):
@@ -448,7 +468,7 @@ lattice[123, 965] = 2
 #lattice[123, 966] = 3
 
 
-sim = Simulation(K=0.5, T=0.4, width=1000, height=1000)
+sim = Simulation(K=0.5, T=0.1, width=1000, height=1000)
 sim.init(random=False, lattice=lattice)
-answer = sim.run(number_of_steps=0, save=False)
-# sim.display_result(y_axis_type="%")
+answer = sim.run(number_of_steps=0, save=True)
+sim.display_result(y_axis_type="%")
