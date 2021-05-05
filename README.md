@@ -66,7 +66,7 @@ Finally run the simulation. Takes in three parameters:
 
     2) count_lattice_step : int, (default 10)
         After these steps count node states on the array and adds to result list.
-        
+
     3) save : True/False, (default False)
         When program counts node states read current lattice from GPU and save as an array in the program folder. This method creates in the file path new folder where results are saved. Required if to convert simulation to gif.
 
@@ -79,7 +79,7 @@ y_axis_type="abs" - On the y axis number of nodes are displayed
 y_axis_type="%" - On the y axis percentage of nodes are displayed 
 
 
-```
+```Python
 sim.display_result(y_axis_type="abs")
 ```
 
