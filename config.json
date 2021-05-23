@@ -1,0 +1,17 @@
+{
+    "K":0.5, 
+    "T":0.05,
+    "I":0,
+    "width":1000 ,
+    "height":1000,
+    "random": true,
+    "p":[1, 0, 0],
+    "cnt_infected":10,
+    "lattice_path":"C:/Code/SIR-model/test.png",
+
+    "count_method": "GPU",
+    "number_of_steps":1000,
+    "count_lattice_step":10,
+    "save": true,
+    "display_result": true
+}
