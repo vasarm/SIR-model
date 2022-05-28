@@ -5,7 +5,7 @@
     * seaborn
     * matplotlib
     * pyopencl
-    * Pillow (if want to imprt array from picture)
+    * Pillow (to import array from picture)
 
 ## ...
     Lattice array values:
